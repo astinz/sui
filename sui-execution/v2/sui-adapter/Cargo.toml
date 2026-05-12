@@ -36,6 +36,10 @@ sui-types.workspace = true
 parking_lot.workspace = true
 
 [features]
+testing = [
+    "move-vm-runtime/testing",
+    "sui-verifier/testing",
+]
 tracing = [
     "sui-types/tracing",
     "move-vm-runtime/tracing",

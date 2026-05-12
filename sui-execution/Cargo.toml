@@ -77,3 +77,16 @@ tracing = [
 #   "move-vm-runtime-$CUT/tracing",
     "move-vm-config/tracing",
 ]
+testing = [
+    "tracing",
+    "sui-adapter-latest/testing",
+    "sui-adapter-v0/testing",
+    "sui-adapter-v1/testing",
+    "sui-adapter-v2/testing",
+    "sui-adapter-v3/testing",
+    "move-vm-runtime-latest/testing",
+    "move-vm-runtime-v0/testing",
+    "move-vm-runtime-v1/testing",
+    "move-vm-runtime-v2/testing",
+    "move-vm-runtime-v3/testing",
+]

@@ -96,6 +96,49 @@ pub enum TraceValue {
     },
 }
 
+/// A snapshot of the VM operand stack for tracer callbacks.
+///
+/// The stack is ordered from bottom to top. Each slot is optional because some
+/// runtime values may not have an available serializable trace representation at
+/// the point the callback fires.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TraceStack {
+    values: Vec<Option<TraceValue>>,
+}
+
+impl TraceStack {
+    pub fn new(values: Vec<Option<TraceValue>>) -> Self {
+        Self { values }
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    pub fn values(&self) -> &[Option<TraceValue>] {
+        &self.values
+    }
+
+    pub fn last(&self) -> Option<&TraceValue> {
+        self.values.last()?.as_ref()
+    }
+
+    pub fn last_n(&self, n: usize) -> Option<impl ExactSizeIterator<Item = &TraceValue>> {
+        if self.values.len() < n {
+            return None;
+        }
+        let values = &self.values[(self.values.len() - n)..];
+        if values.iter().any(Option::is_none) {
+            return None;
+        }
+        Some(values.iter().map(|value| value.as_ref().unwrap()))
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum RefType {
     Imm,
@@ -162,6 +205,28 @@ pub struct DataLoad {
 /// A TraceEvent is a single event in the Move VM, external events can also be interleaved in the
 /// trace. MoveVM events, are well structured, and can be a frame event or an instruction event.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ExtraInstructionInformation {
+    Branch(u16),
+    BrTrue(u16),
+    BrFalse(u16),
+    CopyLoc(usize),
+    MoveLoc(usize),
+    StLoc(usize),
+    MutBorrowLoc(usize),
+    ImmBorrowLoc(usize),
+    Pack(usize),
+    PackGeneric(usize),
+    PackVariant(usize),
+    PackVariantGeneric(usize),
+    Unpack(usize),
+    UnpackGeneric(usize),
+    UnpackVariant(usize),
+    UnpackVariantGeneric(usize),
+    VecPack(usize),
+    VecUnpack(usize),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum TraceEvent {
     OpenFrame {
         frame: Box<Frame>,
@@ -171,6 +236,13 @@ pub enum TraceEvent {
         frame_id: TraceIndex,
         return_: Vec<TraceValue>,
         gas_left: u64,
+    },
+    BeforeInstruction {
+        type_parameters: Vec<TypeTag>,
+        pc: u16,
+        gas_left: u64,
+        instruction: Box<String>,
+        extra: Option<ExtraInstructionInformation>,
     },
     Instruction {
         type_parameters: Vec<TypeTag>,
@@ -382,6 +454,41 @@ impl MoveTraceBuilder {
         });
     }
 
+    /// Record a `BeforeInstruction` event before the VM executes an instruction.
+    pub fn before_instruction<T: Into<Opcodes>>(
+        &mut self,
+        instruction: T,
+        type_parameters: Vec<TypeTag>,
+        gas_left: u64,
+        pc: u16,
+        extra: Option<ExtraInstructionInformation>,
+    ) {
+        self.before_instruction_with_stack(instruction, type_parameters, gas_left, pc, extra, None);
+    }
+
+    pub fn before_instruction_with_stack<T: Into<Opcodes>>(
+        &mut self,
+        instruction: T,
+        type_parameters: Vec<TypeTag>,
+        gas_left: u64,
+        pc: u16,
+        extra: Option<ExtraInstructionInformation>,
+        stack: Option<&TraceStack>,
+    ) {
+        let opcode: Opcodes = instruction.into();
+
+        self.push_event_with_stack(
+            TraceEvent::BeforeInstruction {
+                type_parameters,
+                pc,
+                gas_left,
+                instruction: Box::new(format!("{:?}", opcode)),
+                extra,
+            },
+            stack,
+        );
+    }
+
     /// Record an `Instruction` event in the trace along with the effects of the instruction.
     pub fn instruction<T: Into<Opcodes>>(
         &mut self,
@@ -413,10 +520,18 @@ impl MoveTraceBuilder {
     // All events are first sent to the event API. If the event specifies that the event should be
     // kept then it is also pushed to the trace to be saved.
     pub fn push_event(&mut self, event: TraceEvent) {
+        self.push_event_with_stack(event, None);
+    }
+
+    pub fn push_event_with_stack(&mut self, event: TraceEvent, stack: Option<&TraceStack>) {
         // Even if the event is not kept, we still increment the event count so that the trace
         // reflects the number of events that were processed.
         self.trace.increment_event_count();
-        if self.tracer.notify(&event, Writer(&mut self.trace)) {
+        let keep_event = {
+            let mut writer = Writer(&mut self.trace);
+            self.tracer.notify(&event, &mut writer, stack)
+        };
+        if keep_event {
             self.trace.push_event(event);
         }
     }

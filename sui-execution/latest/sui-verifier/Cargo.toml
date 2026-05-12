@@ -20,3 +20,7 @@ move-bytecode-verifier = { path = "../../../external-crates/move/crates/move-byt
 mysten-common.workspace = true
 sui-types.workspace = true
 sui-protocol-config.workspace = true
+
+[features]
+default = []
+testing = []

@@ -30,8 +30,8 @@ use move_core_types::{
 };
 use move_trace_format::{
     format::{
-        DataLoad, Effect as EF, Location, MoveTraceBuilder, Read, RefType as Mutability,
-        TraceIndex, TraceValue, TypeTagWithRefs, Write,
+        DataLoad, Effect as EF, ExtraInstructionInformation, Location, MoveTraceBuilder, Read,
+        RefType as Mutability, TraceIndex, TraceStack, TraceValue, TypeTagWithRefs, Write,
     },
     value::SerializableMoveValue,
 };
@@ -357,6 +357,14 @@ impl VMTracer<'_> {
             machine,
             &RuntimeLocation::Stack(offset - stack_idx),
         )
+    }
+
+    fn trace_stack(&self, vtables: &VMDispatchTables, machine: &MachineState) -> TraceStack {
+        let values = (0..machine.operand_stack.len())
+            .rev()
+            .map(|i| self.resolve_stack_value(vtables, machine, i))
+            .collect();
+        TraceStack::new(values)
     }
 
     /// Resolve a value in a local to a TraceValue. References are fully rooted all the way back to
@@ -905,7 +913,7 @@ impl VMTracer<'_> {
         &mut self,
         vtables: &VMDispatchTables,
         machine: &MachineState,
-        _remaining_gas: &u64,
+        remaining_gas: &u64,
     ) -> Option<()> {
         use crate::jit::execution::ast::Bytecode as B;
 
@@ -925,8 +933,60 @@ impl VMTracer<'_> {
             pc,
         );
 
+        let instruction = &machine.call_stack.current_frame.function.to_ref().code()[pc as usize];
+        let extra = match instruction {
+            B::Branch(offset) => Some(ExtraInstructionInformation::Branch(*offset)),
+            B::BrTrue(offset) => Some(ExtraInstructionInformation::BrTrue(*offset)),
+            B::BrFalse(offset) => Some(ExtraInstructionInformation::BrFalse(*offset)),
+            B::CopyLoc(idx) => Some(ExtraInstructionInformation::CopyLoc(*idx as usize)),
+            B::MoveLoc(idx) => Some(ExtraInstructionInformation::MoveLoc(*idx as usize)),
+            B::StLoc(idx) => Some(ExtraInstructionInformation::StLoc(*idx as usize)),
+            B::MutBorrowLoc(idx) => Some(ExtraInstructionInformation::MutBorrowLoc(*idx as usize)),
+            B::ImmBorrowLoc(idx) => Some(ExtraInstructionInformation::ImmBorrowLoc(*idx as usize)),
+            B::Pack(struct_ptr) => {
+                Some(ExtraInstructionInformation::Pack(struct_ptr.field_count()))
+            }
+            B::PackGeneric(struct_inst_ptr) => Some(ExtraInstructionInformation::PackGeneric(
+                struct_inst_ptr.field_count as usize,
+            )),
+            B::PackVariant(variant_ptr) => Some(ExtraInstructionInformation::PackVariant(
+                variant_ptr.field_count(),
+            )),
+            B::PackVariantGeneric(variant_inst_ptr) => Some(
+                ExtraInstructionInformation::PackVariantGeneric(variant_inst_ptr.field_count()),
+            ),
+            B::Unpack(struct_ptr) => Some(ExtraInstructionInformation::Unpack(
+                struct_ptr.field_count(),
+            )),
+            B::UnpackGeneric(struct_inst_ptr) => Some(ExtraInstructionInformation::UnpackGeneric(
+                struct_inst_ptr.field_count as usize,
+            )),
+            B::UnpackVariant(variant_ptr)
+            | B::UnpackVariantImmRef(variant_ptr)
+            | B::UnpackVariantMutRef(variant_ptr) => Some(
+                ExtraInstructionInformation::UnpackVariant(variant_ptr.field_count()),
+            ),
+            B::UnpackVariantGeneric(variant_inst_ptr)
+            | B::UnpackVariantGenericImmRef(variant_inst_ptr)
+            | B::UnpackVariantGenericMutRef(variant_inst_ptr) => Some(
+                ExtraInstructionInformation::UnpackVariantGeneric(variant_inst_ptr.field_count()),
+            ),
+            B::VecPack(_, count) => Some(ExtraInstructionInformation::VecPack(*count as usize)),
+            B::VecUnpack(_, count) => Some(ExtraInstructionInformation::VecUnpack(*count as usize)),
+            _ => None,
+        };
+        let stack = self.trace_stack(vtables, machine);
+        self.trace.before_instruction_with_stack(
+            instruction,
+            vec![],
+            *remaining_gas,
+            pc,
+            extra,
+            Some(&stack),
+        );
+
         if !self.wants_effects {
-            match &machine.call_stack.current_frame.function.to_ref().code()[pc as usize] {
+            match instruction {
                 // StLoc: still need store_global and insert_local side effects.
                 B::StLoc(lidx) => {
                     let ty = self.type_stack.last()?.clone();
@@ -962,7 +1022,7 @@ impl VMTracer<'_> {
             Some(effects)
         };
 
-        match &machine.call_stack.current_frame.function.to_ref().code()[pc as usize] {
+        match instruction {
             B::Nop
             | B::Branch(_)
             | B::Ret

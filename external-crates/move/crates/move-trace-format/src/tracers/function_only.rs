@@ -7,7 +7,12 @@ use crate::interface::{Tracer, Writer};
 /// A tracer that only keeps `OpenFrame`, and `CloseFrame` events.
 pub struct FunctionOnlyTracer;
 impl Tracer for FunctionOnlyTracer {
-    fn notify(&mut self, event: &TraceEvent, _writer: Writer<'_>) -> bool {
+    fn notify(
+        &mut self,
+        event: &TraceEvent,
+        _writer: &mut Writer<'_>,
+        _stack: Option<&crate::format::TraceStack>,
+    ) -> bool {
         matches!(
             event,
             TraceEvent::OpenFrame { .. } | TraceEvent::CloseFrame { .. }

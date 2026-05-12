@@ -1,7 +1,7 @@
 // Copyright (c) The Move Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::format::{MoveTrace, TraceEvent, TraceVersion};
+use crate::format::{MoveTrace, TraceEvent, TraceStack, TraceVersion};
 use serde::Serialize;
 
 /// This is meant to be an internal tracing interface for the VM, and should only be implemented
@@ -10,18 +10,29 @@ use serde::Serialize;
 /// add custom tracing data to the VM's traces that cannot be added using other means or
 /// post-processing.
 pub trait Tracer {
-    /// Notify the tracer of a new event in the VM. This is called for every event that is emitted,
-    /// and immediatlye _after_ the `event` has been added to the trace held inside of the `writer`.
-    fn notify(&mut self, event: &TraceEvent, writer: Writer<'_>) -> bool;
+    /// Notify the tracer of a new event in the VM. Return true to keep the event in the trace.
+    fn notify(
+        &mut self,
+        event: &TraceEvent,
+        writer: &mut Writer<'_>,
+        stack: Option<&TraceStack>,
+    ) -> bool;
 
     /// Whether this tracer wants effect events (Push, Pop, Read, Write, DataLoad). If false, the
     /// VM tracer can skip the expensive value conversion work needed to build effects.
-    fn wants_effects(&self) -> bool;
+    fn wants_effects(&self) -> bool {
+        true
+    }
 }
 
 impl<T: Tracer> Tracer for &mut T {
-    fn notify(&mut self, event: &TraceEvent, writer: Writer<'_>) -> bool {
-        <T as Tracer>::notify(self, event, writer)
+    fn notify(
+        &mut self,
+        event: &TraceEvent,
+        writer: &mut Writer<'_>,
+        stack: Option<&TraceStack>,
+    ) -> bool {
+        <T as Tracer>::notify(self, event, writer, stack)
     }
 
     fn wants_effects(&self) -> bool {

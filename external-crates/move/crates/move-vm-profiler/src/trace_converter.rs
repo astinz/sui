@@ -179,7 +179,9 @@ impl GasProfiler {
                 TraceEvent::Instruction { gas_left, .. } => {
                     last_gas_left = gas_left;
                 }
-                TraceEvent::Effect(..) | TraceEvent::External(..) => (),
+                TraceEvent::BeforeInstruction { .. }
+                | TraceEvent::Effect(..)
+                | TraceEvent::External(..) => (),
                 TraceEvent::OpenFrame { frame, gas_left } => {
                     self.open_frame(Self::trace_name(&frame), "".to_string(), gas_left);
                     self.frames.push((frame.frame_id, *frame));

@@ -92,7 +92,7 @@ pub fn verify_module(
             // only verify lack of one-time witness type instantiations if we have a one-time
             // witness type candidate and if instantiation does not happen in test code
 
-            if !is_test_fun(fn_name, module, fn_info_map) {
+            if !cfg!(feature = "testing") && !is_test_fun(fn_name, module, fn_info_map) {
                 verify_no_instantiations(module, fn_def, candidate_name, def)
                     .map_err(verification_failure)?;
             }

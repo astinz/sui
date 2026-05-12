@@ -30,3 +30,10 @@ move-vm-types = { path = "../../../external-crates/move/move-execution/v3/crates
 sui-protocol-config.workspace = true
 sui-types.workspace = true
 tracing.workspace = true
+
+[features]
+default = []
+testing = [
+    "move-stdlib-natives/testing",
+    "move-vm-runtime/testing",
+]

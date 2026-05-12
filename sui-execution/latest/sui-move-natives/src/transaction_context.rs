@@ -27,7 +27,7 @@ impl TransactionContext {
     pub fn new(tx_context: Rc<RefCell<TxContext>>) -> Self {
         Self {
             tx_context,
-            test_only: false,
+            test_only: cfg!(feature = "testing"),
         }
     }
 

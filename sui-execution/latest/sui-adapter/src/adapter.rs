@@ -101,6 +101,15 @@ mod checked {
         ));
         exts.add(NativesCostTable::from_protocol_config(protocol_config));
         exts.add(TransactionContext::new(tx_context));
+        #[cfg(feature = "testing")]
+        {
+            let test_store: &sui_move_natives::test_scenario::InMemoryTestStore = Box::leak(
+                Box::new(sui_move_natives::test_scenario::InMemoryTestStore(
+                    RefCell::new(sui_types::in_memory_storage::InMemoryStorage::default()),
+                )),
+            );
+            exts.add(test_store);
+        }
         drop(exts);
         Ok(extensions)
     }

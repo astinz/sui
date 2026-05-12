@@ -83,7 +83,9 @@ pub trait TraceConsumer: Default + Send {
         let mut current_fn_context = vec![];
         for event in trace_reader {
             match event.unwrap() {
-                TraceEvent::Effect(_) | TraceEvent::External(_) => (),
+                TraceEvent::BeforeInstruction { .. }
+                | TraceEvent::Effect(_)
+                | TraceEvent::External(_) => (),
                 TraceEvent::OpenFrame { frame, .. } => {
                     current_fn_context.push(frame);
                 }

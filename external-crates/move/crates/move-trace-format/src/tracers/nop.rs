@@ -6,7 +6,12 @@ use crate::interface::{Tracer, Writer};
 
 pub struct NopTracer;
 impl Tracer for NopTracer {
-    fn notify(&mut self, _event: &TraceEvent, _writer: Writer<'_>) -> bool {
+    fn notify(
+        &mut self,
+        _event: &TraceEvent,
+        _writer: &mut Writer<'_>,
+        _stack: Option<&crate::format::TraceStack>,
+    ) -> bool {
         // keep all events
         true
     }

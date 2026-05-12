@@ -50,3 +50,8 @@ tracing = [
     "move-vm-profiler/tracing",
     "move-vm-config/tracing",
 ]
+testing = [
+    "move-vm-runtime/testing",
+    "sui-move-natives/testing",
+    "sui-verifier/testing",
+]

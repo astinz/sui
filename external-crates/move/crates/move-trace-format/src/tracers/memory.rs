@@ -120,7 +120,7 @@ impl TraceState {
             // External events are treated opaqeuly
             TraceEvent::External(_) => (),
             // Instructions
-            TraceEvent::Instruction { .. } => (),
+            TraceEvent::BeforeInstruction { .. } | TraceEvent::Instruction { .. } => (),
         }
     }
 
@@ -145,12 +145,18 @@ impl Default for TraceState {
 }
 
 impl Tracer for TraceState {
-    fn notify(&mut self, event: &TraceEvent, mut write: Writer<'_>) -> bool {
+    fn notify(
+        &mut self,
+        event: &TraceEvent,
+        write: &mut Writer<'_>,
+        _stack: Option<&crate::format::TraceStack>,
+    ) -> bool {
         self.apply_event(event);
         // We only emit the state when we hit a non-effect internal event. This coincides with
         // emitting the current state of the VM before each instruction/function call.
         match event {
-            TraceEvent::Instruction { .. }
+            TraceEvent::BeforeInstruction { .. }
+            | TraceEvent::Instruction { .. }
             | TraceEvent::OpenFrame { .. }
             | TraceEvent::CloseFrame { .. } => {
                 write.push(self.to_string());

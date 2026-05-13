@@ -39,6 +39,8 @@ use move_trace_format::{
 use smallvec::SmallVec;
 use std::{collections::BTreeMap, sync::Arc};
 
+const MAX_ROOT_LOCATION_SNAPSHOT_DEPTH: usize = 128;
+
 /// Internal state for the tracer. This is where the actual tracing logic is implemented.
 pub(crate) struct VMTracer<'a> {
     trace: &'a mut MoveTraceBuilder,
@@ -500,13 +502,28 @@ impl VMTracer<'_> {
 
     /// Snapshot the value at the root of a location. This is used to create the value snapshots
     /// for TraceValue references.
-    #[allow(clippy::only_used_in_recursion)]
     fn root_location_snapshot(
         &self,
         vtables: &VMDispatchTables,
         machine: &MachineState,
         loc: &RuntimeLocation,
     ) -> Option<SerializableMoveValue> {
+        self.root_location_snapshot_with_depth(vtables, machine, loc, 0)
+    }
+
+    #[allow(clippy::only_used_in_recursion)]
+    fn root_location_snapshot_with_depth(
+        &self,
+        vtables: &VMDispatchTables,
+        machine: &MachineState,
+        loc: &RuntimeLocation,
+        depth: usize,
+    ) -> Option<SerializableMoveValue> {
+        if depth >= MAX_ROOT_LOCATION_SNAPSHOT_DEPTH {
+            return None;
+        }
+        let next_depth = depth + 1;
+
         Some(match loc {
             RuntimeLocation::Local(fidx, loc_idx) => {
                 let local_ty = self
@@ -535,9 +552,10 @@ impl VMTracer<'_> {
                         debug_assert!(false, "We tried to access a local that was not initialized");
                         return None;
                     }
-                    ReferenceKind::Filled { location, .. } => {
-                        self.root_location_snapshot(vtables, machine, &location)?
-                    }
+                    ReferenceKind::Filled { location, .. } => self
+                        .root_location_snapshot_with_depth(
+                            vtables, machine, &location, next_depth,
+                        )?,
                 }
             }
             RuntimeLocation::Stack(stack_idx) => {
@@ -547,24 +565,28 @@ impl VMTracer<'_> {
                         let value = machine.operand_stack.value.get(*stack_idx)?;
                         into_annotated_move_value(value, &ty.layout)?
                     }
-                    Some((_, location)) => {
-                        self.root_location_snapshot(vtables, machine, location)?
-                    }
+                    Some((_, location)) => self.root_location_snapshot_with_depth(
+                        vtables, machine, location, next_depth,
+                    )?,
                 }
             }
             RuntimeLocation::Indexed(loc, _) => {
-                self.root_location_snapshot(vtables, machine, loc)?
+                self.root_location_snapshot_with_depth(vtables, machine, loc, next_depth)?
             }
             RuntimeLocation::Global(id) => match &self.loaded_data.get(id)? {
-                GlobalValue::InLocal(fidx, lidx) => self.root_location_snapshot(
+                GlobalValue::InLocal(fidx, lidx) => self.root_location_snapshot_with_depth(
                     vtables,
                     machine,
                     &RuntimeLocation::Local(*fidx, *lidx),
+                    next_depth,
                 )?,
                 GlobalValue::Value(trace_value) => Some(trace_value.snapshot().clone())?,
-                GlobalValue::AtStackOffset(idx) => {
-                    self.root_location_snapshot(vtables, machine, &RuntimeLocation::Stack(*idx))?
-                }
+                GlobalValue::AtStackOffset(idx) => self.root_location_snapshot_with_depth(
+                    vtables,
+                    machine,
+                    &RuntimeLocation::Stack(*idx),
+                    next_depth,
+                )?,
             },
         })
     }

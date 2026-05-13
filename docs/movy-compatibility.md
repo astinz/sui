@@ -94,6 +94,21 @@ signals. Capturing a `TraceStack` gives Movy those signals through the existing
 trace-value representation without exposing the full private runtime value
 representation.
 
+## Trace snapshot recursion guard
+
+`move-vm-runtime` now bounds recursive root-location snapshot resolution while
+building `TraceValue` snapshots for references. If a traced runtime location
+chain is cyclic or deeper than `MAX_ROOT_LOCATION_SNAPSHOT_DEPTH`, the snapshot
+resolver returns `None` for that value instead of recursing until the tracing
+thread overflows its stack.
+
+Why: Movy and Peregrine fuzz arbitrary public functions, so the tracer can see
+reference-location shapes that normal trace consumers rarely exercise. A missing
+trace value is already represented by `TraceStack` as `Option<TraceValue>`;
+aborting the whole process is not acceptable for a fuzzing UI. This keeps the
+full trace path concrete and preserves normal execution semantics while making
+trace value materialization fail closed.
+
 ## Coverage changes
 
 `move-coverage` now ignores `TraceEvent::BeforeInstruction` in the same class as
@@ -166,7 +181,12 @@ cargo check -p movy-fuzz --no-default-features
 cargo tree -p movy-fuzz --no-default-features -e normal
 cargo check -p peregrine-movy-fuzz-adapter
 cargo check -p peregrine
+cargo run -p peregrine -- --peregrine-movy-fuzz /Users/eieiron/dev/gm_contracts/savings_personal .
 ```
+
+The direct Peregrine Movy fuzz helper run completed a 30 second public-function
+fuzz campaign with 105 public targets and 1248 queue entries after the trace
+snapshot recursion guard was added.
 
 `cargo tree -p peregrine -i sui-types` was also used to confirm that Peregrine
 and Movy both resolve `sui-types` from this local Sui checkout.

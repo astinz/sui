@@ -65,8 +65,7 @@ impl TUIInterface for DebugInterface {
             left_screen: self
                 .text
                 .iter()
-                .map(AsRef::as_ref)
-                .map(Line::from)
+                .map(|s| Line::from(s.as_str()))
                 .collect(),
             right_screen: vec![Line::from(format!(
                 "line number: {}   column number: {}",

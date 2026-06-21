@@ -73,8 +73,7 @@ impl<BytecodeViewer: LeftScreen, SourceViewer: RightScreen<BytecodeViewer>> TUII
             left_screen: self
                 .bytecode_text
                 .iter()
-                .map(AsRef::as_ref)
-                .map(Line::from)
+                .map(|s| Line::from(s.as_str()))
                 .collect(),
             right_screen: report,
         }
